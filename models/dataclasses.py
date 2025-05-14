@@ -1,3 +1,6 @@
+# MIT License
+# Copyright (c) 2025 ChaseDDevelopment
+# See LICENSE file for full license information.
 """This module contains dataclasses needed for morpheus"""
 from dataclasses import dataclass
 from pathlib import Path

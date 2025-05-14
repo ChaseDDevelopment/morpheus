@@ -1,3 +1,6 @@
+# MIT License
+# Copyright (c) 2025 ChaseDDevelopment
+# See LICENSE file for full license information.
 import copy
 from typing import Generator, List
 from unittest.mock import Mock, patch

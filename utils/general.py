@@ -1,3 +1,6 @@
+# MIT License
+# Copyright (c) 2025 ChaseDDevelopment
+# See LICENSE file for full license information.
 """General utility functions for Morpheus."""
 import xml.etree.ElementTree as ET
 from pathlib import Path
