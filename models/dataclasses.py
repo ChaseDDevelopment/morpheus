@@ -2,6 +2,7 @@
 # Copyright (c) 2025 ChaseDDevelopment
 # See LICENSE file for full license information.
 """This module contains dataclasses needed for morpheus"""
+
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Tuple, List, Dict, Optional
@@ -157,10 +158,19 @@ class MorpheusImage:
         """Load the image into memory as a numpy array from disk"""
         self.image = cv2.imread(str(self.path))
 
-    def write_image_to_disk(self):
-        """Write the image to disk as an image"""
+    def is_loaded_in_memory(self) -> bool:
+        """Check if image is currently loaded in memory"""
+        return self.image is not None
+
+    def write_image_to_disk(self, keep_in_memory: bool = False):
+        """Write the image to disk as an image
+
+        Args:
+            keep_in_memory (bool): If True, keep image in memory after writing
+        """
         cv2.imwrite(str(self.path), self.image)
-        del self.image
+        if not keep_in_memory:
+            del self.image
 
     def resize_image(self, width: int, height: int):
         """Resize the image to the desired size"""
@@ -177,3 +187,16 @@ class MorpheusImage:
             label.box.ymin = int(label.box.ymin * scale)
             label.box.ymax = int(label.box.ymax * scale)
         self.image_size = (new_width, new_height)
+
+    def apply_gaussian_blur(self, kernel_size: int = 5, sigma: float = 0):
+        """Apply Gaussian blur to the image
+
+        Args:
+            kernel_size (int): Kernel size for Gaussian blur. Must be odd and positive.
+            sigma (float): Standard deviation for Gaussian kernel. If 0, calculated automatically.
+        """
+        if kernel_size % 2 == 0 or kernel_size < 1:
+            raise ValueError("Kernel size must be odd and positive")
+        if sigma == 0:
+            sigma = 0.3 * ((kernel_size - 1) * 0.5 - 1) + 0.8
+        self.image = cv2.GaussianBlur(self.image, (kernel_size, kernel_size), sigma)

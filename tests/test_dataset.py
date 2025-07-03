@@ -2,6 +2,7 @@
 # Copyright (c) 2025 ChaseDDevelopment
 # See LICENSE file for full license information.
 """Tests for the dataset module."""
+
 import argparse
 import copy
 import shutil
@@ -97,6 +98,7 @@ def arguments(tmp_path):
         resize=640,
         multiply=1,
         augment=False,
+        in_memory=False,
     )
 
 
@@ -205,11 +207,14 @@ def test_multiply_files(tmp_path):
     assert matched_images[8].name == "image3_2.jpg"
 
 
-@patch("random.randint", new=Mock(side_effect=[1, 1, 2]))
+@patch("random.randint", new=Mock(side_effect=[1, 1, 2, 1]))
 @patch(
     "random.sample",
-    new=Mock(side_effect=[["flip_h"], ["flip_v"], ["flip_h", "flip_v"]]),
+    new=Mock(
+        side_effect=[["flip_h"], ["flip_v"], ["flip_h", "flip_v"], ["gaussian_blur"]]
+    ),
 )
+@patch("random.choice", new=Mock(return_value=5))
 def test_augment(images, arguments):
     """Test the augment function"""
     # Test with flip-h
@@ -217,6 +222,7 @@ def test_augment(images, arguments):
     arguments.multiply = 3
     arguments.flip_h = True
     arguments.flip_v = True
+    arguments.gaussian_blur = False
     # Test with index 0 - horizontal flip augmentation
     original_image = copy.deepcopy(images[0])
     image = morpheus.dataset.augment(original_image, 0, arguments)
@@ -241,6 +247,13 @@ def test_augment(images, arguments):
     image = morpheus.dataset.augment(original_image, 2, arguments)
     for i, label in enumerate(image.labels):
         assert label.box == constants.EXPECTED_BOXES[i]
+
+    # Test with Gaussian blur augmentation
+    arguments.gaussian_blur = True
+    original_image = copy.deepcopy(images[0])
+    with patch.object(original_image, "apply_gaussian_blur") as mock_blur:
+        image = morpheus.dataset.augment(original_image, 0, arguments)
+        mock_blur.assert_called_once_with(kernel_size=5)
 
 
 @patch(
@@ -270,6 +283,109 @@ def test_main(arguments, images):
     morpheus.dataset.get_class_names.assert_called()
     morpheus.dataset.generate_dataset.assert_called()
     morpheus.dataset.remap_classes.assert_called()
+
+
+def test_estimate_memory_usage_empty_images(arguments):
+    """Test estimate_memory_usage with empty image list."""
+    from morpheus.dataset import estimate_memory_usage
+
+    estimated_gb, available_gb = estimate_memory_usage([], arguments)
+    assert estimated_gb == 0.0
+    assert available_gb > 0  # Should return available memory
+
+
+def test_estimate_memory_usage_with_images(images, arguments):
+    """Test estimate_memory_usage with images."""
+    from morpheus.dataset import estimate_memory_usage
+
+    arguments.multiply = 3
+    estimated_gb, available_gb = estimate_memory_usage(images, arguments)
+    assert estimated_gb > 0
+    assert available_gb > 0
+
+
+def test_check_memory_feasibility_exceeds_limit(images, arguments, capsys):
+    """Test check_memory_feasibility when memory exceeds limit."""
+    from morpheus.dataset import check_memory_feasibility
+
+    # Mock to simulate high memory usage
+    with patch("morpheus.dataset.estimate_memory_usage") as mock_estimate:
+        mock_estimate.return_value = (100.0, 10.0)  # 100GB estimated, 10GB available
+
+        # Test user says no
+        with patch("builtins.input", return_value="n"):
+            result = check_memory_feasibility(images, arguments)
+            assert result is False
+
+        # Test user says yes
+        with patch("builtins.input", return_value="y"):
+            result = check_memory_feasibility(images, arguments)
+            assert result is True
+
+        # Test invalid input then yes
+        with patch("builtins.input", side_effect=["invalid", "yes"]):
+            result = check_memory_feasibility(images, arguments)
+            assert result is True
+            captured = capsys.readouterr()
+            assert "Please enter 'yes' or 'no'" in captured.out
+
+
+def test_check_memory_feasibility_under_limit(images, arguments):
+    """Test check_memory_feasibility when memory is under limit."""
+    from morpheus.dataset import check_memory_feasibility
+
+    # Mock to simulate low memory usage
+    with patch("morpheus.dataset.estimate_memory_usage") as mock_estimate:
+        mock_estimate.return_value = (1.0, 10.0)  # 1GB estimated, 10GB available
+        result = check_memory_feasibility(images, arguments)
+        assert result is True
+
+
+@patch("models.dataclasses.MorpheusImage.resize_image", new=Mock())
+@patch("models.dataclasses.MorpheusImage.write_image_to_disk", new=Mock())
+@patch("models.dataclasses.MorpheusImage.load_image_to_memory", new=Mock())
+@patch(
+    "models.dataclasses.MorpheusImage.is_loaded_in_memory", new=Mock(return_value=False)
+)
+def test_generate_dataset_with_in_memory(tmp_path, arguments):
+    """Test the generate_dataset function with in_memory flag."""
+    arguments.multiply = 1
+    arguments.in_memory = True
+    matched_images = get_mocked_morpheus_images(tmp_path)
+    matched_images.sort(key=lambda x: x.name)
+    shutil.copy2 = Mock()
+    output_directory = tmp_path / "output"
+
+    from models.dataclasses import MorpheusImage
+
+    generate_dataset(output_directory, constants.CLASS_NAMES, matched_images, arguments)
+
+    # Check that load_image_to_memory was called for all images during initial load
+    assert MorpheusImage.load_image_to_memory.call_count >= 3
+    # Check that write_image_to_disk was called with keep_in_memory=True
+    MorpheusImage.write_image_to_disk.assert_called_with(keep_in_memory=True)
+
+
+def test_main_with_memory_abort(arguments, images):
+    """Test main function when user aborts due to memory constraints."""
+    arguments.in_memory = True
+
+    with patch("morpheus.dataset.match_images_to_label_files") as mock_match:
+        with patch("morpheus.dataset.get_class_names") as mock_get_names:
+            with patch("morpheus.dataset.remap_classes") as mock_remap:
+                with patch("morpheus.dataset.check_memory_feasibility") as mock_check:
+                    with patch("morpheus.dataset.generate_dataset") as mock_generate:
+                        mock_match.return_value = images
+                        mock_get_names.return_value = constants.CLASS_NAMES
+                        mock_remap.return_value = (constants.CLASS_NAMES, images)
+                        mock_check.return_value = False  # User cancels
+
+                        morpheus.dataset.main(
+                            arguments.input, arguments.output, arguments
+                        )
+
+                        # generate_dataset should not be called
+                        mock_generate.assert_not_called()
 
 
 def test_parse_args(tmp_path):
@@ -332,8 +448,23 @@ def test_parse_args(tmp_path):
     parsed_args = parse_args(args)
     assert parsed_args.input_directory == in_dir
     assert parsed_args.output_directory == out_dir
-    assert parsed_args.flip_h is True
+    assert parsed_args.flip_v is True
     assert parsed_args.augment is True
+    # test with gaussian-blur argument
+    args = main_args
+    args += ["--gaussian-blur"]
+    parsed_args = parse_args(args)
+    assert parsed_args.input_directory == in_dir
+    assert parsed_args.output_directory == out_dir
+    assert parsed_args.gaussian_blur is True
+    assert parsed_args.augment is True
+    # test with in-memory argument
+    args = main_args
+    args += ["--in-memory"]
+    parsed_args = parse_args(args)
+    assert parsed_args.input_directory == in_dir
+    assert parsed_args.output_directory == out_dir
+    assert parsed_args.in_memory is True
 
 
 # @patch("morpheus.dataset.remap_class", new=Mock(return_value="car"))

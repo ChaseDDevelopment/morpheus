@@ -2,6 +2,7 @@
 # Copyright (c) 2025 ChaseDDevelopment
 # See LICENSE file for full license information.
 """Tests for the dataclasses module."""
+
 import copy
 from typing import Generator
 from unittest.mock import Mock, patch
@@ -178,3 +179,41 @@ def test_resize_image(image):
         assert label.box.ymin == int(original_labels[i]["ymin"] * scale)
         assert label.box.ymax == int(original_labels[i]["ymax"] * scale)
     assert cv2.imwrite.called
+
+
+def test_apply_gaussian_blur(image):
+    """Test the apply_gaussian_blur() method of MorpheusImage."""
+    original_image = image.image.copy()
+
+    # Test with default parameters
+    with patch("cv2.GaussianBlur") as mock_blur:
+        mock_blur.return_value = np.full_like(image.image, 100)
+        image.apply_gaussian_blur()
+        # Check that GaussianBlur was called with correct parameters
+        assert mock_blur.call_count == 1
+        call_args = mock_blur.call_args[0]
+        np.testing.assert_array_equal(call_args[0], original_image)
+        assert call_args[1] == (5, 5)
+        assert abs(call_args[2] - 1.1) < 0.01  # sigma should be approximately 1.1
+        np.testing.assert_array_equal(image.image, np.full_like(image.image, 100))
+
+    # Test with custom kernel size and sigma
+    image.image = original_image.copy()
+    with patch("cv2.GaussianBlur") as mock_blur:
+        mock_blur.return_value = np.full_like(image.image, 150)
+        image.apply_gaussian_blur(kernel_size=7, sigma=2.0)
+        # Check that GaussianBlur was called with correct parameters
+        assert mock_blur.call_count == 1
+        call_args = mock_blur.call_args[0]
+        np.testing.assert_array_equal(call_args[0], original_image)
+        assert call_args[1] == (7, 7)
+        assert call_args[2] == 2.0
+        np.testing.assert_array_equal(image.image, np.full_like(image.image, 150))
+
+    # Test with invalid kernel size (even number)
+    with pytest.raises(ValueError, match="Kernel size must be odd and positive"):
+        image.apply_gaussian_blur(kernel_size=4)
+
+    # Test with invalid kernel size (negative)
+    with pytest.raises(ValueError, match="Kernel size must be odd and positive"):
+        image.apply_gaussian_blur(kernel_size=-3)

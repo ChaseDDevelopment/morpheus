@@ -2,11 +2,14 @@
 # Copyright (c) 2025 ChaseDDevelopment
 # See LICENSE file for full license information.
 """Dataset module for Morpheus."""
+
 import argparse
 import copy
+import psutil
 import random
 import shutil
 import sys
+import warnings
 from pathlib import Path
 from typing import List, Tuple
 
@@ -17,6 +20,89 @@ from models.dataclasses import (
     MorpheusImage,
 )
 from utils.general import match_images_to_label_files, get_class_names
+
+
+def estimate_memory_usage(
+    images: List[MorpheusImage], args: argparse.Namespace
+) -> Tuple[float, float]:
+    """Estimate memory usage for in-memory processing.
+
+    Args:
+        images (List[MorpheusImage]): List of images to process.
+        args (argparse.Namespace): Arguments containing processing options.
+
+    Returns:
+        Tuple[float, float]: (estimated_memory_gb, available_memory_gb)
+    """
+    if not images:
+        return 0.0, psutil.virtual_memory().available / (1024**3)
+
+    # Calculate average image size from first few images
+    sample_size = min(5, len(images))
+    total_pixels = 0
+
+    for img in images[:sample_size]:
+        width, height = img.image_size
+        total_pixels += width * height
+
+    avg_pixels = total_pixels / sample_size
+
+    # Estimate memory per image after resize
+    resize_pixels = args.resize * args.resize
+    bytes_per_pixel = 3  # RGB image
+
+    # Memory per image in bytes (original + resized during processing)
+    memory_per_image = (avg_pixels + resize_pixels) * bytes_per_pixel
+
+    # Account for multiplication and augmentation
+    total_images = len(images) * args.multiply
+
+    # Add overhead for processing (labels, intermediate data, etc.)
+    overhead_factor = 1.2
+
+    estimated_memory_bytes = total_images * memory_per_image * overhead_factor
+    estimated_memory_gb = estimated_memory_bytes / (1024**3)
+
+    available_memory_gb = psutil.virtual_memory().available / (1024**3)
+
+    return estimated_memory_gb, available_memory_gb
+
+
+def check_memory_feasibility(
+    images: List[MorpheusImage], args: argparse.Namespace
+) -> bool:
+    """Check if in-memory processing is feasible and warn user if not.
+
+    Args:
+        images (List[MorpheusImage]): List of images to process.
+        args (argparse.Namespace): Arguments containing processing options.
+
+    Returns:
+        bool: True if processing should continue, False if user cancelled.
+    """
+    estimated_gb, available_gb = estimate_memory_usage(images, args)
+
+    print("Memory estimation:")
+    print(f"  Estimated usage: {estimated_gb:.2f} GB")
+    print(f"  Available memory: {available_gb:.2f} GB")
+
+    if estimated_gb > available_gb * 0.8:  # Use 80% as safety threshold
+        warnings.warn(
+            f"Warning: Estimated memory usage ({estimated_gb:.2f} GB) may exceed "
+            f"available memory ({available_gb:.2f} GB). Consider processing without "
+            f"--in-memory flag or reducing dataset size.",
+            UserWarning,
+        )
+
+        while True:
+            user_input = input("Continue anyway? (y/n): ").lower()
+            if user_input in ["yes", "y"]:
+                return True
+            elif user_input in ["no", "n"]:
+                return False
+            print("Please enter 'yes' or 'no' (y/n)")
+
+    return True
 
 
 def augment(img_data: MorpheusImage, i: int, args: argparse.Namespace) -> MorpheusImage:
@@ -39,6 +125,8 @@ def augment(img_data: MorpheusImage, i: int, args: argparse.Namespace) -> Morphe
         augment_options.append("flip_h")
     if args.flip_v:
         augment_options.append("flip_v")
+    if args.gaussian_blur:
+        augment_options.append("gaussian_blur")
 
     num_augmentations = random.randint(1, len(augment_options))
     chosen_augmentations = random.sample(augment_options, num_augmentations)
@@ -47,6 +135,9 @@ def augment(img_data: MorpheusImage, i: int, args: argparse.Namespace) -> Morphe
             img_data.flip_horizontally()
         if augmentation == "flip_v":
             img_data.flip_vertically()
+        if augmentation == "gaussian_blur":
+            kernel_size = random.choice([3, 5, 7])
+            img_data.apply_gaussian_blur(kernel_size=kernel_size)
     return img_data
 
 
@@ -78,9 +169,9 @@ def generate_dataset(
     multiply = args.multiply if args.multiply != 1 else 1
 
     train_ratio, val_ratio, test_ratio = split_ratios
-    assert (
-        round(train_ratio + val_ratio + test_ratio, 5) == 1.0
-    ), "Split Ratios should sum up to 1"
+    assert round(train_ratio + val_ratio + test_ratio, 5) == 1.0, (
+        "Split Ratios should sum up to 1"
+    )
     if multiply > 1:
         images = multiply_files(images, multiply)
     total_images = len(images)
@@ -95,6 +186,13 @@ def generate_dataset(
     test_data = images[val_end:]
 
     splits = [("train", train_data), ("valid", val_data), ("test", test_data)]
+
+    # Load all images in memory if requested
+    if args.in_memory:
+        print("Loading all images into memory for faster processing...")
+        for img_data in tqdm(images, desc="Loading images", unit="image(s)"):
+            if not img_data.is_loaded_in_memory():
+                img_data.load_image_to_memory()
 
     for split_name, split_data in splits:
         labels_dir = output_directory / split_name / "labels"
@@ -113,12 +211,18 @@ def generate_dataset(
             new_img_path = images_dir / img_data.name
             shutil.copy2(img_data.path, new_img_path)
             img_data.path = new_img_path
-            img_data.load_image_to_memory()
+
+            # Load image if not already in memory
+            if not img_data.is_loaded_in_memory():
+                img_data.load_image_to_memory()
+
             if img_data.image_size != (resize, resize):
                 img_data.resize_image(resize, resize)
             if args.augment:
                 img_data = augment(img_data, i, args)
-            img_data.write_image_to_disk()
+
+            # Keep in memory if in-memory mode, otherwise free memory
+            img_data.write_image_to_disk(keep_in_memory=args.in_memory)
             split_images.append(str(img_data.path))
 
             # Write labels
@@ -189,6 +293,13 @@ def main(input_directory: Path, output_directory: Path, args=None):
     morpheus_images = match_images_to_label_files(input_directory)
     class_names = get_class_names(morpheus_images)
     class_names, _ = remap_classes(class_names, morpheus_images)
+
+    # Check memory feasibility if in-memory processing is requested
+    if args.in_memory:
+        if not check_memory_feasibility(morpheus_images, args):
+            print("Aborting processing due to memory constraints.")
+            return
+
     generate_dataset(output_directory, class_names, morpheus_images, args)
 
 
@@ -374,8 +485,16 @@ def parse_args(arguments):
         "--flip-h", action="store_true", help="Flip images horizontally"
     )
     parser.add_argument("--flip-v", action="store_true", help="Flip images vertically")
+    parser.add_argument(
+        "--gaussian-blur", action="store_true", help="Apply Gaussian blur augmentation"
+    )
+    parser.add_argument(
+        "--in-memory",
+        action="store_true",
+        help="Process all images in memory (faster but uses more RAM)",
+    )
     arguments = parser.parse_args(arguments)
-    if arguments.flip_h or arguments.flip_v:
+    if arguments.flip_h or arguments.flip_v or arguments.gaussian_blur:
         setattr(arguments, "augment", True)
     else:
         setattr(arguments, "augment", False)
@@ -385,7 +504,9 @@ def parse_args(arguments):
 if __name__ == "__main__":  # pragma: no cover
     parsed_arguments = parse_args(sys.argv[1:])
     if (
-        parsed_arguments.flip_h or parsed_arguments.flip_v
+        parsed_arguments.flip_h
+        or parsed_arguments.flip_v
+        or parsed_arguments.gaussian_blur
     ) and parsed_arguments.multiply == 1:
         print("You must set a multiple greater than 1 to use augmentations")
         quit()

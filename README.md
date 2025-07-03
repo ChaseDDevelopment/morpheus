@@ -34,11 +34,13 @@ python -m morpheus.dataset <input_directory> <output_directory> [options]
 - `--resize, -r <int>`: Resize images to this size (default: 640).
 - `--flip-h`: Apply horizontal flip augmentation (requires `--multiply > 1`).
 - `--flip-v`: Apply vertical flip augmentation (requires `--multiply > 1`).
+- `--gaussian-blur`: Apply Gaussian blur augmentation (requires `--multiply > 1`).
+- `--in-memory`: Process all images in memory (faster but uses more RAM).
 
 #### Example
 
 ```sh
-python -m morpheus.dataset ./data/input ./data/output --multiply 3 --resize 416 --flip-h --flip-v
+python -m morpheus.dataset ./data/input ./data/output --multiply 3 --resize 416 --flip-h --flip-v --gaussian-blur --in-memory
 ```
 
 This will:
@@ -46,7 +48,16 @@ This will:
 - Generate a YOLOv8 dataset in `./data/output`
 - Duplicate the dataset 3 times
 - Resize images to 416x416
-- Apply horizontal and vertical flip augmentations
+- Apply horizontal flip, vertical flip, and Gaussian blur augmentations
+- Process all images in memory for faster performance
+
+### Augmentation Details
+
+When augmentations are enabled (with `--multiply > 1`), the tool randomly applies one or more of the enabled augmentations to each duplicated image:
+
+- **Horizontal Flip** (`--flip-h`): Flips the image horizontally and adjusts bounding boxes accordingly
+- **Vertical Flip** (`--flip-v`): Flips the image vertically and adjusts bounding boxes accordingly  
+- **Gaussian Blur** (`--gaussian-blur`): Applies Gaussian blur with a randomly selected kernel size (3, 5, or 7) to add slight blur, which can help improve model robustness to image quality variations
 
 ### Interactive Class Remapping
 
