@@ -5,16 +5,16 @@ description = "Computer Vision Dataset Generator"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "coverage",
-    "exceptiongroup",
-    "iniconfig",
     "numpy",
     "opencv-python",
-    "packaging",
-    "pluggy",
     "psutil",
-    "pytest-cov",
-    "pytest",
-    "tomli",
     "tqdm",
+]
+
+[project.optional-dependencies]
+dev = [
+    "coverage",
+    "pytest",
+    "pytest-cov",
+    "ruff",
 ]
