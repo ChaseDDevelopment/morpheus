@@ -120,6 +120,7 @@ class MorpheusImage:
         image_size (Tuple[int, int]): The size of the object in pixels (width, height).
         image_depth (int): The depth of the object in bits per pixel.
         image (Optional: np.ndarray): The image stored as a numpy array.
+        relative_path (Optional[Path]): The relative path from the input directory.
 
     """
 
@@ -129,10 +130,31 @@ class MorpheusImage:
     image_size: Tuple[int, int]
     image_depth: int
     image: Optional[np.ndarray] = None
+    relative_path: Optional[Path] = None
 
     def get_labels(self) -> dict:
         """Return a list of labels associated with the image"""
         return {key: label.as_dict() for key, label in enumerate(self.labels)}
+
+    def get_unique_filename(self) -> str:
+        """Generate a unique filename based on relative path to avoid collisions.
+
+        Returns:
+            str: Unique filename combining path components with original filename
+        """
+        if self.relative_path and self.relative_path.parent != Path("."):
+            # Get parent directories (excluding the filename)
+            path_parts = self.relative_path.parent.parts
+            # Filter out common words like 'frames' and combine
+            filtered_parts = [p.replace("_frames", "") for p in path_parts]
+            # Combine parts with the original filename
+            prefix = "_".join(filtered_parts)
+            stem = Path(self.name).stem
+            suffix = Path(self.name).suffix
+            return f"{prefix}_{stem}{suffix}"
+        else:
+            # No relative path or in root directory, use original name
+            return self.name
 
     def flip_horizontally(self):
         """Flip the Image Horizontally and all labels/bounding boxes with it"""

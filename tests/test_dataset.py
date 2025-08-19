@@ -19,6 +19,8 @@ from morpheus.dataset import (
     parse_args,
     multiply_files,
 )
+from pathlib import Path
+
 from tests import constants
 from tests.constants import get_mocked_morpheus_images
 
@@ -579,3 +581,55 @@ def test_remap_class(images):
     for image in mapped_images:
         for label in image.labels:
             assert label.name == "car_test"
+
+
+def test_generate_dataset_with_duplicate_filenames(tmp_path, arguments):
+    """Test that generate_dataset handles duplicate filenames correctly"""
+    # Create images with duplicate names but different relative paths
+    label = MorpheusLabel(name="object", box=copy.deepcopy(constants.EXPECTED_BOXES[0]))
+
+    images = [
+        MorpheusImage(
+            name="frame0001.png",
+            path=tmp_path / "cat1" / "frame0001.png",
+            image=np.full((600, 400, 3), 42, dtype=np.uint8),
+            labels=[label],
+            image_size=(600, 400),
+            image_depth=3,
+            relative_path=Path("cat1/timestamp1_frames/frame0001.png"),
+        ),
+        MorpheusImage(
+            name="frame0001.png",
+            path=tmp_path / "cat2" / "frame0001.png",
+            image=np.full((600, 400, 3), 43, dtype=np.uint8),
+            labels=[label],
+            image_size=(600, 400),
+            image_depth=3,
+            relative_path=Path("cat2/timestamp2_frames/frame0001.png"),
+        ),
+    ]
+
+    # Mock file operations
+    shutil.copy2 = Mock()
+
+    # Generate dataset
+    output_directory = tmp_path / "output"
+    generate_dataset(output_directory, ["object"], images, arguments)
+
+    # Check that files were copied with unique names
+    assert shutil.copy2.call_count == 2
+
+    # Get the destination filenames from the mock calls
+    dest_files = []
+    for call in shutil.copy2.call_args_list:
+        dest_path = call[0][1]  # Second argument is destination
+        dest_files.append(Path(dest_path).name)
+
+    # Verify filenames are unique
+    assert len(dest_files) == len(set(dest_files)), (
+        "Generated filenames should be unique"
+    )
+
+    # Verify the expected unique names
+    assert "cat1_timestamp1_frame0001.png" in dest_files
+    assert "cat2_timestamp2_frame0001.png" in dest_files

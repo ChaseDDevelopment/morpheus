@@ -11,6 +11,8 @@ import cv2
 import numpy as np
 import pytest
 
+from pathlib import Path
+
 from models.dataclasses import (
     MorpheusBoundingBox,
     MorpheusLabel,
@@ -217,3 +219,67 @@ def test_apply_gaussian_blur(image):
     # Test with invalid kernel size (negative)
     with pytest.raises(ValueError, match="Kernel size must be odd and positive"):
         image.apply_gaussian_blur(kernel_size=-3)
+
+
+def test_get_unique_filename_with_nested_path(mock_path):
+    """Test get_unique_filename with nested directory structure."""
+    # Create image with nested relative path
+    image = MorpheusImage(
+        name="frame0001.png",
+        path=mock_path,
+        labels=[],
+        image_size=(600, 400),
+        image_depth=3,
+        relative_path=Path("Can1/2025615182642_frames/frame0001.png"),
+    )
+
+    # Should combine directory parts with filename
+    assert image.get_unique_filename() == "Can1_2025615182642_frame0001.png"
+
+
+def test_get_unique_filename_without_relative_path(mock_path):
+    """Test get_unique_filename without relative path (root directory)."""
+    # Create image without relative path
+    image = MorpheusImage(
+        name="image.jpg",
+        path=mock_path,
+        labels=[],
+        image_size=(600, 400),
+        image_depth=3,
+        relative_path=None,
+    )
+
+    # Should return original name
+    assert image.get_unique_filename() == "image.jpg"
+
+
+def test_get_unique_filename_in_root_directory(mock_path):
+    """Test get_unique_filename with relative path in root directory."""
+    # Create image with relative path in root (no parent dirs)
+    image = MorpheusImage(
+        name="image.jpg",
+        path=mock_path,
+        labels=[],
+        image_size=(600, 400),
+        image_depth=3,
+        relative_path=Path("image.jpg"),
+    )
+
+    # Should return original name when in root
+    assert image.get_unique_filename() == "image.jpg"
+
+
+def test_morpheus_image_with_relative_path(mock_path):
+    """Test that MorpheusImage properly handles relative_path parameter."""
+    relative_path = Path("subdir/image.jpg")
+    image = MorpheusImage(
+        name="image.jpg",
+        path=mock_path,
+        labels=[],
+        image_size=(600, 400),
+        image_depth=3,
+        relative_path=relative_path,
+    )
+
+    assert image.relative_path == relative_path
+    assert image.get_unique_filename() == "subdir_image.jpg"

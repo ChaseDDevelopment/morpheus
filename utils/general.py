@@ -56,7 +56,7 @@ def match_images_to_label_files(directory: Path) -> List[MorpheusImage]:
         dynamic_ncols=True,
     )
     for file in files:
-        if file.suffix == ".bmp" or file.suffix == ".jpg":
+        if file.suffix in [".bmp", ".jpg", ".png"]:
             xml_file = file.with_suffix(".xml")
             if xml_file.is_file():
                 # print(f"Match found: {file.name} and {xml_file.name}")
@@ -82,7 +82,13 @@ def match_images_to_label_files(directory: Path) -> List[MorpheusImage]:
                         name, MorpheusBoundingBox(xmin, ymin, xmax, ymax)
                     )
                     labels.append(label)
-                image = MorpheusImage(file.name, file, labels, image_size, 3)
+
+                # Calculate relative path from the input directory
+                relative_path = file.relative_to(directory)
+
+                image = MorpheusImage(
+                    file.name, file, labels, image_size, 3, relative_path=relative_path
+                )
                 morpheus_images.append(image)
                 progress_bar.update(1)
     progress_bar.close()

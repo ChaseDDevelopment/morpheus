@@ -9,9 +9,11 @@ import numpy as np
 import pytest
 
 from models.dataclasses import MorpheusImage, MorpheusLabel
+from pathlib import Path
+
 from tests import constants
 from tests.constants import get_mocked_morpheus_images
-from utils.general import get_class_names
+from utils.general import get_class_names, match_images_to_label_files
 
 
 @pytest.fixture
@@ -78,3 +80,45 @@ def test_match_images_to_label_files(tmp_path):
     assert matched_images[0].image_size == (720, 540)
     # Make sure the image depths are correct
     assert matched_images[0].image_depth == 3
+    # Make sure relative paths are set correctly
+    assert matched_images[0].relative_path == Path(constants.IMAGE_NAME)
+
+
+def test_match_images_with_nested_directories(tmp_path):
+    """Test matching images in nested directory structures"""
+    # Create nested directory structure
+    subdir = tmp_path / "category" / "timestamp_frames"
+    subdir.mkdir(parents=True)
+
+    # Create image and XML files in nested directory
+    (subdir / "frame0001.png").write_text("image content")
+    xml_content = """
+    <annotation>
+    <filename>frame0001.png</filename>
+    <size>
+    <width>640</width>
+    <height>480</height>
+    <depth>3</depth>
+    </size>
+    <object>
+    <name>object</name>
+    <bndbox>
+    <xmin>100</xmin>
+    <ymin>100</ymin>
+    <xmax>200</xmax>
+    <ymax>200</ymax>
+    </bndbox>
+    </object>
+    </annotation>
+    """
+    (subdir / "frame0001.xml").write_text(xml_content)
+
+    # Match images
+    matched_images = match_images_to_label_files(tmp_path)
+
+    # Verify relative path is correctly captured
+    assert len(matched_images) == 1
+    assert matched_images[0].relative_path == Path(
+        "category/timestamp_frames/frame0001.png"
+    )
+    assert matched_images[0].get_unique_filename() == "category_timestamp_frame0001.png"

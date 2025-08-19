@@ -11,6 +11,9 @@ dependencies = [
     "tqdm",
 ]
 
+[project.scripts]
+morpheus = "morpheus.dataset:cli_main"
+
 [project.optional-dependencies]
 dev = [
     "coverage",
@@ -18,3 +21,13 @@ dev = [
     "pytest-cov",
     "ruff",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["morpheus", "models", "utils"]
+
+[tool.uv]
+package = true

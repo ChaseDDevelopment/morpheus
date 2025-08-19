@@ -207,8 +207,9 @@ def generate_dataset(
             total=len(split_data),
             unit="image(s)",
         ):
-            # Write image
-            new_img_path = images_dir / img_data.name
+            # Write image with unique filename to avoid collisions
+            unique_filename = img_data.get_unique_filename()
+            new_img_path = images_dir / unique_filename
             shutil.copy2(img_data.path, new_img_path)
             img_data.path = new_img_path
 
@@ -225,8 +226,8 @@ def generate_dataset(
             img_data.write_image_to_disk(keep_in_memory=args.in_memory)
             split_images.append(str(img_data.path))
 
-            # Write labels
-            label_path = labels_dir / f"{Path(img_data.name).stem}.txt"
+            # Write labels using the unique filename stem
+            label_path = labels_dir / f"{Path(unique_filename).stem}.txt"
             with label_path.open("w") as f:
                 for label in img_data.labels:
                     bbox = label.box
@@ -272,6 +273,7 @@ def multiply_files(images: List[MorpheusImage], multiple: int):
                 labels=copy.deepcopy(image.labels),
                 image_size=copy.deepcopy(image.image_size),
                 image_depth=copy.deepcopy(image.image_depth),
+                relative_path=copy.deepcopy(image.relative_path),
             )
             multiplied_images.append(new_image)
     return multiplied_images
@@ -501,7 +503,8 @@ def parse_args(arguments):
     return arguments
 
 
-if __name__ == "__main__":  # pragma: no cover
+def cli_main():
+    """Entry point for the CLI script."""
     parsed_arguments = parse_args(sys.argv[1:])
     if (
         parsed_arguments.flip_h
@@ -516,3 +519,7 @@ if __name__ == "__main__":  # pragma: no cover
         Path(parsed_arguments.output_directory),
         parsed_arguments,
     )
+
+
+if __name__ == "__main__":  # pragma: no cover
+    cli_main()
