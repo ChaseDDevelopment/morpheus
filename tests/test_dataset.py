@@ -478,7 +478,9 @@ def test_parse_args(tmp_path):
     "builtins.input",
     new=Mock(
         side_effect=[
-            "n",  # prompt to remap classes - no
+            "n",  # remap all to single name - no (first call)
+            "n",  # prompt to remap classes - no (first call)
+            "n",  # remap all to single name - no (second call)
             "test_bad_input",  # prompt to remap classes - bad input
             "y",  # prompt to remap classes - yes
             "test_bad_input",  # prompt to remap more classes - bad input

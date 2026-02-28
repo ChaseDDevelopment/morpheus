@@ -320,11 +320,29 @@ def remap_classes(
                                         a list of MorpheusImage objects.
 
     """
-    print(
-        "The following class names were found within the dataset,"
-        "would you like to re-map any of them?"
-    )
+    print("The following class names were found within the dataset:")
     print(class_names)
+
+    if len(class_names) > 1:
+        while True:
+            remap_all_input = input(
+                "Would you like to remap all classes to a single name? (y/n): "
+            ).lower()
+            if remap_all_input in ["yes", "y", "no", "n"]:
+                break
+            print(const.INVALID_INPUT)
+        if remap_all_input in ["yes", "y"]:
+            new_name = input("Enter the class name: ").strip()
+            if new_name:
+                old_count = len(class_names)
+                for image in images:
+                    for label in image.labels:
+                        label.name = new_name
+                class_names = [new_name]
+                print(f"Remapped {old_count} classes -> '{new_name}'")
+                return class_names, images
+
+    print("Would you like to re-map any of them?")
     while True:
         user_input = input("Enter 'yes' or 'no' (y/n): ").lower()
         if user_input in ["yes", "no", "y", "n"]:
