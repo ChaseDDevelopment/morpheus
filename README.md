@@ -47,6 +47,7 @@ uv run morpheus <input_directory> <output_directory> [options]
 | `--flip-v` | | Vertical flip augmentation* | False |
 | `--gaussian-blur` | | Apply Gaussian blur* | False |
 | `--in-memory` | | Load all images to RAM (faster) | False |
+| `--include-negatives` | | Include images without XML as negative samples | False |
 
 *Requires `--multiply > 1`
 
@@ -79,6 +80,23 @@ When augmentations are enabled (with `--multiply > 1`), the tool randomly applie
 - **Horizontal Flip** (`--flip-h`): Flips the image horizontally and adjusts bounding boxes accordingly
 - **Vertical Flip** (`--flip-v`): Flips the image vertically and adjusts bounding boxes accordingly  
 - **Gaussian Blur** (`--gaussian-blur`): Applies Gaussian blur with a randomly selected kernel size (3, 5, or 7) to add slight blur, which can help improve model robustness to image quality variations
+
+### Negative Samples
+
+When using annotation tools like LabelIMG, images that contain no objects of interest receive no `.xml` annotation file. By default, Morpheus skips these images. However, including them as **negative samples** (images with empty label files) can significantly improve model performance by teaching the model what "nothing" looks like — reducing false positives like phantom detections on empty conveyor belts.
+
+Use the `--include-negatives` flag to include these unannotated images in your dataset:
+
+```bash
+uv run morpheus ./raw_data ./yolo_dataset --include-negatives
+```
+
+When enabled, Morpheus will:
+1. Detect images without a matching `.xml` file
+2. Read image dimensions and generate a LabelIMG-compatible empty `.xml` annotation
+3. Include the image in the dataset with an empty `.txt` label file (no bounding boxes)
+
+The tool prints a summary showing how many labeled vs. negative images were matched.
 
 ### Duplicate Filename Handling
 

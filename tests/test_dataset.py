@@ -101,6 +101,7 @@ def arguments(tmp_path):
         multiply=1,
         augment=False,
         in_memory=False,
+        include_negatives=False,
     )
 
 
@@ -265,6 +266,10 @@ def test_augment(images, arguments):
 @patch(
     "morpheus.dataset.get_class_names",
     new=Mock(return_value=constants.CLASS_NAMES),
+)
+@patch(
+    "morpheus.dataset.count_class_instances",
+    new=Mock(),
 )
 def test_main(arguments, images):
     """Test the main function"""
