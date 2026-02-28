@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import List
 
+import cv2
 from tqdm import tqdm
 
 from models.dataclasses import (
@@ -35,11 +36,70 @@ def get_class_names(images: List[MorpheusImage]) -> List[str]:
     return class_names
 
 
-def match_images_to_label_files(directory: Path) -> List[MorpheusImage]:
+def _indent_xml(elem, level=0):
+    """Add indentation to XML elements for pretty printing (Python 3.8 compatible).
+
+    Args:
+        elem: The XML element to indent.
+        level: Current indentation level.
+    """
+    indent = "\n" + "\t" * level
+    if len(elem):
+        if not elem.text or not elem.text.strip():
+            elem.text = indent + "\t"
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = indent
+        for child in elem:
+            _indent_xml(child, level + 1)
+        if not child.tail or not child.tail.strip():
+            child.tail = indent
+    else:
+        if level and (not elem.tail or not elem.tail.strip()):
+            elem.tail = indent
+    if not level:
+        elem.tail = "\n"
+
+
+def _write_empty_xml(xml_path: Path, image_path: Path, width: int, height: int, depth: int):
+    """Write a LabelIMG-compatible XML annotation file with no objects.
+
+    Args:
+        xml_path: Path to write the XML file.
+        image_path: Path to the source image.
+        width: Image width in pixels.
+        height: Image height in pixels.
+        depth: Image color depth (channels).
+    """
+    annotation = ET.Element("annotation")
+    ET.SubElement(annotation, "folder").text = image_path.parent.name
+    ET.SubElement(annotation, "filename").text = image_path.name
+    ET.SubElement(annotation, "path").text = str(image_path)
+
+    source = ET.SubElement(annotation, "source")
+    ET.SubElement(source, "database").text = "Unknown"
+
+    size = ET.SubElement(annotation, "size")
+    ET.SubElement(size, "width").text = str(width)
+    ET.SubElement(size, "height").text = str(height)
+    ET.SubElement(size, "depth").text = str(depth)
+
+    ET.SubElement(annotation, "segmented").text = "0"
+
+    _indent_xml(annotation)
+    tree = ET.ElementTree(annotation)
+    tree.write(str(xml_path), encoding="unicode", xml_declaration=False)
+
+
+def match_images_to_label_files(
+    directory: Path, include_negatives: bool = False
+) -> List[MorpheusImage]:
     """Map each image to its corresponding xml file.
 
     Args:
         directory (Path): The directory containing the images and xml files.
+        include_negatives (bool): If True, include images without XML annotations
+            as negative samples (empty labels). Generates empty XML files for
+            consistency. Defaults to False (skip images without XML).
 
     Returns:
         List[MorpheusImages]: A list of MorpheusImage objects.
@@ -55,11 +115,13 @@ def match_images_to_label_files(directory: Path) -> List[MorpheusImage]:
         desc="Processing and matching images to xml files",
         dynamic_ncols=True,
     )
+    negative_count = 0
     for file in files:
-        if file.suffix in [".bmp", ".jpg", ".png"]:
+        if file.suffix.lower() in [".bmp", ".jpg", ".jpeg", ".png"]:
             xml_file = file.with_suffix(".xml")
+            relative_path = file.relative_to(directory)
+
             if xml_file.is_file():
-                # print(f"Match found: {file.name} and {xml_file.name}")
                 tree = ET.parse(xml_file)
                 root = tree.getroot()
 
@@ -71,7 +133,6 @@ def match_images_to_label_files(directory: Path) -> List[MorpheusImage]:
                 labels = []
                 for obj in root.findall("object"):
                     name = obj.find("name").text
-                    # Get the object bounding box
                     bbox = obj.find("bndbox")
                     xmin = int(bbox.find("xmin").text)
                     ymin = int(bbox.find("ymin").text)
@@ -82,14 +143,35 @@ def match_images_to_label_files(directory: Path) -> List[MorpheusImage]:
                         name, MorpheusBoundingBox(xmin, ymin, xmax, ymax)
                     )
                     labels.append(label)
+            elif include_negatives:
+                # No XML = negative sample (empty belt, no objects)
+                # Read image to get dimensions and generate XML for consistency
+                img = cv2.imread(str(file))
+                if img is None:
+                    progress_bar.update(1)
+                    continue
+                height, width = img.shape[:2]
+                depth = img.shape[2] if len(img.shape) == 3 else 1
+                image_size = (width, height)
+                labels = []
+                del img
 
-                # Calculate relative path from the input directory
-                relative_path = file.relative_to(directory)
-
-                image = MorpheusImage(
-                    file.name, file, labels, image_size, 3, relative_path=relative_path
-                )
-                morpheus_images.append(image)
+                # Write XML with same structure as LabelIMG but no objects
+                _write_empty_xml(xml_file, file, width, height, depth)
+                negative_count += 1
+            else:
                 progress_bar.update(1)
+                continue
+
+            image = MorpheusImage(
+                file.name, file, labels, image_size, 3, relative_path=relative_path
+            )
+            morpheus_images.append(image)
+            progress_bar.update(1)
     progress_bar.close()
+    print(
+        f"Matched {len(morpheus_images)} images: "
+        f"{len(morpheus_images) - negative_count} labeled, "
+        f"{negative_count} negative (no XML)"
+    )
     return morpheus_images

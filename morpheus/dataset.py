@@ -10,6 +10,7 @@ import random
 import shutil
 import sys
 import warnings
+from collections import Counter
 from pathlib import Path
 from typing import List, Tuple
 
@@ -279,6 +280,29 @@ def multiply_files(images: List[MorpheusImage], multiple: int):
     return multiplied_images
 
 
+def count_class_instances(images: List[MorpheusImage]) -> None:
+    """Count instances per class, print unlabeled images, and list images with 'jug'."""
+    class_counts = Counter()
+    unlabeled_count = 0
+
+    for image in images:
+        if not image.labels:  # No labels (e.g., no XML)
+            unlabeled_count += 1
+        else:
+            for label in image.labels:
+                class_counts[label.name] += 1
+
+    print("Dataset Statistics:")
+    print(f"Total unlabeled images: {unlabeled_count}")
+    if class_counts:
+        print("Total class instances in dataset:")
+        for class_name, count in sorted(class_counts.items()):
+            print(f"{class_name}: {count} instances")
+    else:
+        print("No labeled instances found in dataset.")
+
+
+
 def main(input_directory: Path, output_directory: Path, args=None):
     """Main function
 
@@ -292,9 +316,13 @@ def main(input_directory: Path, output_directory: Path, args=None):
         None
 
     """
-    morpheus_images = match_images_to_label_files(input_directory)
+    morpheus_images = match_images_to_label_files(
+        input_directory, include_negatives=args.include_negatives
+    )
     class_names = get_class_names(morpheus_images)
     class_names, _ = remap_classes(class_names, morpheus_images)
+
+    count_class_instances(morpheus_images)
 
     # Check memory feasibility if in-memory processing is requested
     if args.in_memory:
@@ -494,6 +522,11 @@ def parse_args(arguments):
         "--in-memory",
         action="store_true",
         help="Process all images in memory (faster but uses more RAM)",
+    )
+    parser.add_argument(
+        "--include-negatives",
+        action="store_true",
+        help="Include images without XML annotations as negative samples (empty labels)",
     )
     arguments = parser.parse_args(arguments)
     if arguments.flip_h or arguments.flip_v or arguments.gaussian_blur:
