@@ -316,7 +316,6 @@ def count_class_instances(images: List[MorpheusImage]) -> None:
         print("No labeled instances found in dataset.")
 
 
-
 def main(input_directory: Path, output_directory: Path, args=None):
     """Main function
 

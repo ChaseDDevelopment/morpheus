@@ -60,7 +60,9 @@ def _indent_xml(elem, level=0):
         elem.tail = "\n"
 
 
-def _write_empty_xml(xml_path: Path, image_path: Path, width: int, height: int, depth: int):
+def _write_empty_xml(
+    xml_path: Path, image_path: Path, width: int, height: int, depth: int
+):
     """Write a LabelIMG-compatible XML annotation file with no objects.
 
     Args:
