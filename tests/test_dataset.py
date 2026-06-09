@@ -102,6 +102,7 @@ def arguments(tmp_path):
         augment=False,
         in_memory=False,
         include_negatives=False,
+        no_test=False,
     )
 
 
@@ -373,6 +374,32 @@ def test_generate_dataset_with_in_memory(tmp_path, arguments):
     MorpheusImage.write_image_to_disk.assert_called_with(keep_in_memory=True)
 
 
+@patch("models.dataclasses.MorpheusImage.resize_image", new=Mock())
+@patch("models.dataclasses.MorpheusImage.write_image_to_disk", new=Mock())
+def test_generate_dataset_no_test(tmp_path, arguments):
+    """Test generate_dataset with --no-test skips the test split."""
+    arguments.no_test = True
+    matched_images = get_mocked_morpheus_images(tmp_path)
+    matched_images.sort(key=lambda x: x.name)
+    shutil.copy2 = Mock()
+    output_directory = tmp_path / "output"
+
+    generate_dataset(output_directory, constants.CLASS_NAMES, matched_images, arguments)
+
+    # train and valid dirs should exist
+    assert (output_directory / "train" / "images").exists()
+    assert (output_directory / "valid" / "images").exists()
+    # test dir should NOT exist
+    assert not (output_directory / "test").exists()
+
+    # data.yaml should not contain test line
+    with open(output_directory / constants.DATA_YAML_FILENAME, "r") as file:
+        content = file.read()
+    assert constants.DATA_TRAIN_YAML_CONTENT in content
+    assert constants.DATA_VAL_YAML_CONTENT in content
+    assert "test:" not in content
+
+
 def test_main_with_memory_abort(arguments, images):
     """Test main function when user aborts due to memory constraints."""
     arguments.in_memory = True
@@ -472,6 +499,13 @@ def test_parse_args(tmp_path):
     assert parsed_args.input_directory == in_dir
     assert parsed_args.output_directory == out_dir
     assert parsed_args.in_memory is True
+    # test with no-test argument
+    args = main_args
+    args += ["--no-test"]
+    parsed_args = parse_args(args)
+    assert parsed_args.input_directory == in_dir
+    assert parsed_args.output_directory == out_dir
+    assert parsed_args.no_test is True
 
 
 # @patch("morpheus.dataset.remap_class", new=Mock(return_value="car"))

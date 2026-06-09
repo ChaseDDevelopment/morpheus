@@ -173,6 +173,13 @@ def generate_dataset(
     assert round(train_ratio + val_ratio + test_ratio, 5) == 1.0, (
         "Split Ratios should sum up to 1"
     )
+
+    if args.no_test:
+        total = train_ratio + val_ratio
+        train_ratio = train_ratio / total
+        val_ratio = val_ratio / total
+        test_ratio = 0
+
     if multiply > 1:
         images = multiply_files(images, multiply)
     total_images = len(images)
@@ -183,10 +190,16 @@ def generate_dataset(
     random.shuffle(images)
 
     train_data = images[:train_end]
-    val_data = images[train_end:val_end]
-    test_data = images[val_end:]
+    if args.no_test:
+        val_data = images[train_end:]
+        test_data = []
+    else:
+        val_data = images[train_end:val_end]
+        test_data = images[val_end:]
 
-    splits = [("train", train_data), ("valid", val_data), ("test", test_data)]
+    splits = [("train", train_data), ("valid", val_data)]
+    if test_data:
+        splits.append(("test", test_data))
 
     # Load all images in memory if requested
     if args.in_memory:
@@ -246,7 +259,8 @@ def generate_dataset(
     with open(output_directory / "data.yaml", "w") as outfile:
         outfile.write("train: ../train/images\n")
         outfile.write("val: ../valid/images\n")
-        outfile.write("test: ../test/images\n")
+        if test_data:
+            outfile.write("test: ../test/images\n")
         outfile.write(f"nc: {len(class_names)}\n")
         outfile.write(
             "names: [" + ", ".join(f"'{name}'" for name in class_names) + "]\n"
@@ -300,7 +314,6 @@ def count_class_instances(images: List[MorpheusImage]) -> None:
             print(f"{class_name}: {count} instances")
     else:
         print("No labeled instances found in dataset.")
-
 
 
 def main(input_directory: Path, output_directory: Path, args=None):
@@ -545,6 +558,12 @@ def parse_args(arguments):
         "--include-negatives",
         action="store_true",
         help="Include images without XML annotations as negative samples (empty labels)",
+    )
+    parser.add_argument(
+        "--no-test",
+        action="store_true",
+        default=False,
+        help="Skip test split; distribute all images to train and valid only",
     )
     arguments = parser.parse_args(arguments)
     if arguments.flip_h or arguments.flip_v or arguments.gaussian_blur:

@@ -48,6 +48,7 @@ uv run morpheus <input_directory> <output_directory> [options]
 | `--gaussian-blur` | | Apply Gaussian blur* | False |
 | `--in-memory` | | Load all images to RAM (faster) | False |
 | `--include-negatives` | | Include images without XML as negative samples | False |
+| `--no-test` | | Skip test split; distribute to train/valid only | False |
 
 *Requires `--multiply > 1`
 
